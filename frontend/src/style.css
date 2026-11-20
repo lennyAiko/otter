@@ -9,6 +9,8 @@
     --on-accent: #ffffff;
     --ok: #007300;
     --danger: #b93535;
+    --warn-text: #8f5900;
+    --warn-bg: rgba(183, 119, 0, 0.16);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -22,6 +24,8 @@
         --accent: #5598e7;
         --ok: #35b231;
         --danger: #ec7e7e;
+        --warn-text: #f0b35a;
+        --warn-bg: rgba(240, 179, 90, 0.16);
     }
 }
 

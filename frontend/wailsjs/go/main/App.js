@@ -18,8 +18,16 @@ export function ListConnections() {
   return window['go']['main']['App']['ListConnections']();
 }
 
+export function ListSchemaTree() {
+  return window['go']['main']['App']['ListSchemaTree']();
+}
+
 export function ParseConnectionURL(arg1) {
   return window['go']['main']['App']['ParseConnectionURL'](arg1);
+}
+
+export function QueryRows(arg1) {
+  return window['go']['main']['App']['QueryRows'](arg1);
 }
 
 export function SaveConnection(arg1) {

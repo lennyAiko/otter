@@ -57,3 +57,24 @@ func (a *App) DeleteConnection(id string) error {
 func (a *App) ParseConnectionURL(raw string) (ConnectConfig, error) {
 	return parseConnectionURL(raw)
 }
+
+// ListSchemaTree returns schemas, tables, and column metadata for the
+// active connection.
+func (a *App) ListSchemaTree() ([]SchemaNode, error) {
+	return a.db.schemaTree(a.ctx)
+}
+
+// QueryRows returns one page of a table's rows with optional filter and sort.
+func (a *App) QueryRows(req TableRequest) (TableRows, error) {
+	return a.db.queryRows(a.ctx, req)
+}
+
+// PreviewUpdates returns the SQL that CommitEdits would run.
+func (a *App) PreviewUpdates(edits []Edit) (string, error) {
+	return a.db.previewUpdates(a.ctx, edits)
+}
+
+// CommitEdits applies all edits in a single transaction.
+func (a *App) CommitEdits(edits []Edit) (CommitResult, error) {
+	return a.db.commitEdits(a.ctx, edits)
+}

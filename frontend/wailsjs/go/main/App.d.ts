@@ -10,7 +10,11 @@ export function Disconnect():Promise<void>;
 
 export function ListConnections():Promise<Array<main.ConnectionProfile>>;
 
+export function ListSchemaTree():Promise<Array<main.SchemaNode>>;
+
 export function ParseConnectionURL(arg1:string):Promise<main.ConnectConfig>;
+
+export function QueryRows(arg1:main.TableRequest):Promise<main.TableRows>;
 
 export function SaveConnection(arg1:main.ConnectionProfile):Promise<main.ConnectionProfile>;
 

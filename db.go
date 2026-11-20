@@ -123,6 +123,17 @@ func openPool(ctx context.Context, cfg ConnectConfig) (*pgxpool.Pool, Connection
 	return pool, info, nil
 }
 
+// active returns the current pool or an error when not connected.
+func (d *database) active() (*pgxpool.Pool, error) {
+	d.mu.Lock()
+	pool := d.pool
+	d.mu.Unlock()
+	if pool == nil {
+		return nil, errors.New("not connected")
+	}
+	return pool, nil
+}
+
 // close shuts the pool down; safe to call with no connection.
 func (d *database) close() {
 	d.mu.Lock()
