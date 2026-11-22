@@ -78,7 +78,8 @@ otter/
 ├── schema.go                   catalog queries (schema tree + column metadata)
 ├── rows.go                     paged row reads (filter, sort, PK tie-breaker)
 ├── edits.go                    edit validation, SQL preview, transactional commit
-├── sqlrunner.go                one-statement runner with text-format results
+├── sqlrunner.go                script splitter, per-statement runner (text results)
+├── sqlrunner_test.go           splitter and error-position tests
 ├── ddl.go                      schema/table DDL validation, quoting, execution
 ├── connections.go              saved profiles in the user config dir (no passwords)
 ├── docker-compose.yml          Postgres 17 dev service
@@ -90,7 +91,7 @@ otter/
 │   ├── src/ConnectionScreen.jsx  profiles + connection form (TanStack Form)
 │   ├── src/Workspace.jsx       schema sidebar + grid host
 │   ├── src/DataGrid.jsx        TanStack Table v9 grid (server-side filter/sort/page, inline edits)
-│   ├── src/SqlEditor.jsx       CodeMirror 6 SQL runner (Run, Ctrl+Enter, history)
+│   ├── src/SqlEditor.jsx       CodeMirror 6 script runner (Run, Ctrl+Enter, history)
 │   ├── src/ResultGrid.jsx      read-only TanStack Table grid for SQL results
 │   ├── src/DdlForms.jsx        TanStack Form schema + table builders with DDL preview
 │   ├── src/Toast.jsx           toast provider and useToast hook
@@ -142,7 +143,7 @@ requires `docker compose down -v` first.
 | 7. Create schema and table | **Done** — verified through the forms and psql |
 | 8. Design pass | **Done** — tokens, dark mode, toasts verified live |
 | 9. Package | **Done** — `wails build`, standalone smoke test, metadata verified |
-| 10. Script runner | **In progress** |
+| 10. Script runner | **Code complete** — checkpoint pending |
 
 ---
 
@@ -444,6 +445,13 @@ outcomes and an optional all-or-nothing transaction.
 
 **Done when:** a mixed script shows per-statement results, a failing statement
 names its line, and transaction mode leaves no partial writes behind.
+
+Implementation notes:
+- `splitStatements` is covered by table tests in `sqlrunner_test.go` (strings,
+  quoted identifiers, nested comments, dollar bodies, `$1` parameters).
+- Runs stop at the first failure; autocommit keeps earlier statements,
+  transaction mode rolls them back. Verified against `billing.invoices` in both
+  modes.
 
 ---
 
