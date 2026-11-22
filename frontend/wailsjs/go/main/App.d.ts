@@ -26,6 +26,8 @@ export function QueryRows(arg1:main.TableRequest):Promise<main.TableRows>;
 
 export function RunQuery(arg1:string):Promise<main.SQLResult>;
 
+export function RunScript(arg1:string,arg2:boolean):Promise<main.ScriptResult>;
+
 export function SaveConnection(arg1:main.ConnectionProfile):Promise<main.ConnectionProfile>;
 
 export function TestConnection(arg1:main.ConnectConfig):Promise<main.ConnectionInfo>;

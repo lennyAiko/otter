@@ -211,7 +211,7 @@ export default function Workspace({info, onBack}) {
                         </div>
                         <p className="muted small">
                             {view === 'sql'
-                                ? 'One statement per run · results capped at 1,000 rows · history is per connection'
+                                ? 'Scripts run statement by statement · 1,000-row cap per statement · history is per connection'
                                 : view === 'create-schema'
                                     ? 'Creates a schema with a quoted identifier'
                                     : view === 'create-table'

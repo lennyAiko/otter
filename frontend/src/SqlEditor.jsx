@@ -3,7 +3,7 @@ import {EditorState} from '@codemirror/state'
 import {EditorView, keymap} from '@codemirror/view'
 import {basicSetup} from 'codemirror'
 import {sql as sqlLanguage} from '@codemirror/lang-sql'
-import {RunQuery} from '../wailsjs/go/main/App'
+import {RunScript} from '../wailsjs/go/main/App'
 import ResultGrid from './ResultGrid'
 
 const editorTheme = EditorView.theme({
@@ -44,6 +44,39 @@ function firstLine(text) {
     return line.length > 120 ? `${line.slice(0, 120)}…` : line
 }
 
+function Statement({index, stmt}) {
+    const failed = Boolean(stmt.error)
+    const hasRows = stmt.columns.length > 0
+    const summary = failed
+        ? 'failed'
+        : hasRows
+            ? `${stmt.rowCount} ${stmt.rowCount === 1 ? 'row' : 'rows'} · ${stmt.durationMs} ms`
+            : `${stmt.affected} ${stmt.affected === 1 ? 'row' : 'rows'} affected · ${stmt.durationMs} ms`
+
+    return (
+        <section className={`stmt ${failed ? 'failed' : ''}`}>
+            <div className="stmt-head">
+                <span className="stmt-index">{index + 1}</span>
+                <code className="stmt-sql" title={stmt.sql}>{firstLine(stmt.sql)}</code>
+                <span className="stmt-meta">{summary}</span>
+            </div>
+            {failed ? (
+                <pre className="error-panel">{stmt.error}</pre>
+            ) : hasRows ? (
+                <ResultGrid
+                    columns={stmt.columns}
+                    emptyText="The statement returned no rows."
+                    label={`Statement ${index + 1} results`}
+                    rows={stmt.rows}
+                />
+            ) : (
+                <p className="muted small stmt-ok">Statement executed.</p>
+            )}
+            {stmt.notice && <p className="notice stmt-note">{stmt.notice}</p>}
+        </section>
+    )
+}
+
 export default function SqlEditor({initialText, restoreSeq, history, onTextChange, onRestore, onRan}) {
     const hostRef = useRef(null)
     const viewRef = useRef(null)
@@ -55,6 +88,7 @@ export default function SqlEditor({initialText, restoreSeq, history, onTextChang
     const [result, setResult] = useState(null)
     const [error, setError] = useState('')
     const [running, setRunning] = useState(false)
+    const [inTransaction, setInTransaction] = useState(true)
 
     async function run() {
         const view = viewRef.current
@@ -63,9 +97,9 @@ export default function SqlEditor({initialText, restoreSeq, history, onTextChang
         setRunning(true)
         setError('')
         try {
-            const rows = await RunQuery(text)
-            setResult(rows)
-            callbacks.current.onRan(text, true)
+            const scriptResult = await RunScript(text, inTransaction)
+            setResult(scriptResult)
+            callbacks.current.onRan(text, scriptResult.statements.every((stmt) => !stmt.error))
         } catch (err) {
             setResult(null)
             setError(String(err))
@@ -121,12 +155,10 @@ export default function SqlEditor({initialText, restoreSeq, history, onTextChang
         view.focus()
     }, [restoreSeq])
 
-    const hasRows = result !== null && result.columns.length > 0
     const summary = result === null
         ? ''
-        : hasRows
-            ? `${result.rowCount} ${result.rowCount === 1 ? 'row' : 'rows'} · ${result.durationMs} ms`
-            : `${result.affected} ${result.affected === 1 ? 'row' : 'rows'} affected · ${result.durationMs} ms`
+        : `${result.statements.length} ${result.statements.length === 1 ? 'statement' : 'statements'} · ${result.durationMs} ms`
+            + (result.rolledBack ? ' · rolled back' : result.inTransaction ? ' · committed' : '')
 
     return (
         <div className="sql-view">
@@ -142,22 +174,38 @@ export default function SqlEditor({initialText, restoreSeq, history, onTextChang
                     {running && <span className="spinner" aria-hidden="true"/>}
                     {running ? 'Running…' : 'Run'}
                 </button>
+                <label
+                    className="check tx-toggle"
+                    title={inTransaction
+                        ? 'Every statement commits together; one failure rolls the script back.'
+                        : 'Each statement commits on its own; earlier statements stay if a later one fails.'}
+                >
+                    <input
+                        checked={inTransaction}
+                        disabled={running}
+                        onChange={(event) => setInTransaction(event.target.checked)}
+                        type="checkbox"
+                    />
+                    One transaction
+                </label>
                 <span className="muted small">Ctrl+Enter</span>
                 {summary && <span className="muted small" role="status">{summary}</span>}
-                {result?.notice && <span className="notice">{result.notice}</span>}
             </div>
 
             {error && <pre className="error-panel">{error}</pre>}
-
-            {hasRows && (
-                <ResultGrid
-                    columns={result.columns}
-                    emptyText="The statement returned no rows."
-                    rows={result.rows}
-                />
+            {result?.error && <pre className="error-panel">{result.error}</pre>}
+            {result?.rolledBack && (
+                <p className="script-banner" role="status">
+                    Rolled back — the script failed, so no changes were kept.
+                </p>
             )}
-            {result !== null && !hasRows && !error && (
-                <p className="muted small">Statement executed.</p>
+
+            {result !== null && result.statements.length > 0 && (
+                <div className="script-results">
+                    {result.statements.map((stmt, index) => (
+                        <Statement index={index} key={index} stmt={stmt}/>
+                    ))}
+                </div>
             )}
 
             {history.length > 0 && (

@@ -6,7 +6,7 @@ const features = {...coreFeatures}
 
 // Read-only TanStack Table used for SQL results. Stage 4's DataGrid adds
 // editing and server paging on top of the same rendering rules.
-export default function ResultGrid({columns, rows, emptyText = 'No rows returned.'}) {
+export default function ResultGrid({columns, rows, emptyText = 'No rows returned.', label = 'Query results'}) {
     const columnDefs = useMemo(() => columns.map((name, index) => ({
         id: String(index),
         accessorFn: (row) => row[index],
@@ -29,7 +29,7 @@ export default function ResultGrid({columns, rows, emptyText = 'No rows returned
 
     return (
         <div className="grid-wrap">
-            <table aria-label="Query results" className="grid">
+            <table aria-label={label} className="grid">
                 <thead>
                 {table.getHeaderGroups().map((group) => (
                     <tr key={group.id}>

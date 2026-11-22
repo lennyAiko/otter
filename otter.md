@@ -140,8 +140,9 @@ requires `docker compose down -v` first.
 | 5. Edit and commit | **Done** — commit, rollback, NULL and read-only paths verified |
 | 6. SQL runner | **Done** — SELECT, RETURNING, errors, cap, history verified |
 | 7. Create schema and table | **Done** — verified through the forms and psql |
-| 8. Design pass | **Code complete** — checkpoint pending |
-| 9. Package | Not started |
+| 8. Design pass | **Done** — tokens, dark mode, toasts verified live |
+| 9. Package | **Done** — `wails build`, standalone smoke test, metadata verified |
+| 10. Script runner | **In progress** |
 
 ---
 
@@ -412,6 +413,37 @@ the same in light and dark.
 
 **Done when:** `build/bin/otter.exe` runs standalone and completes the Stage 1–7
 flows against the dev database.
+
+Implementation notes:
+- Icon: otter-head mark drawn at 1024 px, bicubic downscales to 16–256 px.
+  `build/windows/icon.ico` holds 7 PNG entries; `build/appicon.png` is the master.
+- `wails.json` `info` block (company, product, version, copyright, comments) is
+  templated by Wails into `build/windows/info.json`, packed into
+  `otter-res.syso`, and linked into the exe. The string-table key is `0409`
+  (en-US) — Wails' default `0000` (neutral) is read by Explorer but invisible to
+  .NET's `FileVersionInfo`, which queries `040904B0` only.
+- `wails build` produces `build/bin/otter.exe` (~17 MB). Standalone launch,
+  window title (`Otter - Postgres Viewer`), and clean close verified.
+
+## Stage 10 — Script runner
+
+Goal: run a whole SQL script, statement by statement, with clear per-statement
+outcomes and an optional all-or-nothing transaction.
+
+- Splitter (`splitStatements`): splits only on top-level semicolons, respecting
+  single-quoted strings (`''` and backslash escapes), double-quoted identifiers,
+  line comments, nested block comments, and dollar-quoted bodies. Fragments that
+  hold only whitespace or comments are dropped.
+- `RunScript(script, inTransaction)`: runs statements in order and stops at the
+  first failure. Transaction mode commits everything together or rolls back on
+  failure; autocommit mode keeps earlier statements. Rows cap at 1,000 per
+  statement, same as single-statement runs.
+- Errors name the line and column inside the failing statement plus the SQLSTATE.
+- UI: numbered result cards (rows grid, command summary, or error), a
+  "One transaction" toggle (on by default), and a rolled-back banner.
+
+**Done when:** a mixed script shows per-statement results, a failing statement
+names its line, and transaction mode leaves no partial writes behind.
 
 ---
 

@@ -50,6 +50,10 @@ export function RunQuery(arg1) {
   return window['go']['main']['App']['RunQuery'](arg1);
 }
 
+export function RunScript(arg1, arg2) {
+  return window['go']['main']['App']['RunScript'](arg1, arg2);
+}
+
 export function SaveConnection(arg1) {
   return window['go']['main']['App']['SaveConnection'](arg1);
 }

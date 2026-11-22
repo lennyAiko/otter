@@ -84,6 +84,11 @@ func (a *App) RunQuery(sql string) (SQLResult, error) {
 	return a.db.runQuery(a.ctx, sql)
 }
 
+// RunScript executes every statement in a script, stopping at the first error.
+func (a *App) RunScript(sql string, inTransaction bool) (ScriptResult, error) {
+	return a.db.runScript(a.ctx, sql, inTransaction)
+}
+
 // CreateSchema creates a schema with a quoted identifier.
 func (a *App) CreateSchema(name string) error {
 	return a.db.createSchema(a.ctx, name)
