@@ -185,6 +185,17 @@ button.primary:hover:not(:disabled) {
     border-color: var(--fill-primary-hover);
 }
 
+button.danger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--on-primary);
+}
+
+button.danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 85%, var(--text-primary));
+    border-color: color-mix(in srgb, var(--danger) 85%, var(--text-primary));
+}
+
 button.busy {
     display: inline-flex;
     align-items: center;
@@ -884,6 +895,36 @@ button.null-btn {
     font-size: 12px;
 }
 
+.session-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    padding: 7px 10px;
+    border: 1px solid var(--border-danger);
+    border-radius: var(--radius-md);
+    background: var(--bg-danger);
+    color: var(--danger);
+    font-size: 12px;
+}
+
+.session-banner span {
+    flex: 1;
+}
+
+.session-banner button {
+    height: 26px;
+    font-size: 12px;
+    background: transparent;
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+    color: inherit;
+}
+
+.session-banner button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
 .sql-history {
     flex: none;
     max-height: 132px;
@@ -1026,4 +1067,42 @@ label.check input {
         opacity: 0;
         transform: translateY(4px);
     }
+}
+
+/* Confirmation dialog */
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(8, 8, 8, 0.35);
+}
+
+.modal {
+    width: min(420px, 100%);
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-md);
+}
+
+.modal h2 {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.modal p {
+    margin: 0 0 14px;
+    font-size: 13px;
+}
+
+.modal .actions {
+    justify-content: flex-end;
+    margin-top: 0;
 }

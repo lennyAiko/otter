@@ -8,6 +8,7 @@ import {
     SaveConnection,
     TestConnection,
 } from '../wailsjs/go/main/App'
+import ConfirmDialog from './ConfirmDialog'
 
 const blank = {
     id: '',
@@ -35,10 +36,20 @@ export default function ConnectionScreen({onConnected}) {
     const [mode, setMode] = useState('fields')
     const [status, setStatus] = useState({kind: 'idle', text: 'Not connected'})
     const [busy, setBusy] = useState(false)
+    const [pendingDelete, setPendingDelete] = useState(null)
     const intent = useRef('save')
 
     const form = useForm({
         defaultValues: blank,
+        listeners: {
+            onChange: () => {
+                setStatus((current) => (
+                    current.kind === 'idle' || current.kind === 'busy'
+                        ? current
+                        : {kind: 'idle', text: 'Not connected'}
+                ))
+            },
+        },
         onSubmit: async ({value}) => {
             if (intent.current === 'test') {
                 await testConnection(value)
@@ -132,6 +143,14 @@ export default function ConnectionScreen({onConnected}) {
         setStatus({kind: 'idle', text: 'Not connected'})
     }
 
+    function switchMode(next) {
+        if (next === mode) return
+        setMode(next)
+        setStatus((current) => (
+            current.kind === 'busy' ? current : {kind: 'idle', text: 'Not connected'}
+        ))
+    }
+
     async function deleteProfile(profile) {
         try {
             await DeleteConnection(profile.id)
@@ -172,7 +191,7 @@ export default function ConnectionScreen({onConnected}) {
                                     <button
                                         aria-label={`Delete ${profile.name}`}
                                         className="icon"
-                                        onClick={() => deleteProfile(profile)}
+                                        onClick={() => setPendingDelete(profile)}
                                         type="button"
                                     >
                                         ✕
@@ -190,7 +209,7 @@ export default function ConnectionScreen({onConnected}) {
                             <button
                                 aria-pressed={mode === 'fields'}
                                 className={mode === 'fields' ? 'on' : ''}
-                                onClick={() => setMode('fields')}
+                                onClick={() => switchMode('fields')}
                                 type="button"
                             >
                                 Fields
@@ -198,7 +217,7 @@ export default function ConnectionScreen({onConnected}) {
                             <button
                                 aria-pressed={mode === 'url'}
                                 className={mode === 'url' ? 'on' : ''}
-                                onClick={() => setMode('url')}
+                                onClick={() => switchMode('url')}
                                 type="button"
                             >
                                 URL
@@ -349,6 +368,22 @@ export default function ConnectionScreen({onConnected}) {
                     </form>
                 </section>
             </div>
+
+            <ConfirmDialog
+                confirmLabel="Delete"
+                danger
+                message={pendingDelete
+                    ? `Delete "${pendingDelete.name}"? Only the saved profile is removed — nothing in the database changes.`
+                    : ''}
+                onCancel={() => setPendingDelete(null)}
+                onConfirm={() => {
+                    const profile = pendingDelete
+                    setPendingDelete(null)
+                    if (profile) deleteProfile(profile)
+                }}
+                open={pendingDelete !== null}
+                title="Delete saved connection?"
+            />
         </div>
     )
 }

@@ -4,6 +4,7 @@ import {EditorView, keymap} from '@codemirror/view'
 import {basicSetup} from 'codemirror'
 import {sql as sqlLanguage} from '@codemirror/lang-sql'
 import {RunScript} from '../wailsjs/go/main/App'
+import {isSessionLost} from './errors'
 import ResultGrid from './ResultGrid'
 
 const editorTheme = EditorView.theme({
@@ -77,13 +78,13 @@ function Statement({index, stmt}) {
     )
 }
 
-export default function SqlEditor({initialText, restoreSeq, history, onTextChange, onRestore, onRan}) {
+export default function SqlEditor({initialText, restoreSeq, history, onTextChange, onRestore, onRan, onSessionLost}) {
     const hostRef = useRef(null)
     const viewRef = useRef(null)
     const runRef = useRef(() => {})
     const seenSeq = useRef(restoreSeq)
     const callbacks = useRef({})
-    callbacks.current = {onTextChange, onRan}
+    callbacks.current = {onTextChange, onRan, onSessionLost}
 
     const [result, setResult] = useState(null)
     const [error, setError] = useState('')
@@ -104,6 +105,7 @@ export default function SqlEditor({initialText, restoreSeq, history, onTextChang
             setResult(null)
             setError(String(err))
             callbacks.current.onRan(text, false)
+            if (isSessionLost(err)) callbacks.current.onSessionLost?.()
         } finally {
             setRunning(false)
         }

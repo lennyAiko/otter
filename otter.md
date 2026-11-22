@@ -96,6 +96,8 @@ otter/
 │   ├── src/SqlEditor.jsx       CodeMirror 6 script runner (Run, Ctrl+Enter, history)
 │   ├── src/ResultGrid.jsx      read-only TanStack Table grid for SQL results
 │   ├── src/DdlForms.jsx        TanStack Form schema + table builders with DDL preview
+│   ├── src/ConfirmDialog.jsx   shared confirm modal (Escape, backdrop, danger action)
+│   ├── src/errors.js           isSessionLost(): spots the backend's "not connected" error
 │   ├── src/Toast.jsx           toast provider and useToast hook
 │   ├── src/App.css
 │   ├── src/style.css           design tokens (light/dark), base type and focus
@@ -457,6 +459,31 @@ Implementation notes:
 
 ---
 
+## UI hardening (after Stage 10)
+
+Safety pack applied after a UI crosscheck; no backend changes.
+
+- **Pending edits are protected.** `DataGrid` reports its staged-change count up
+  to `Workspace`, which gates table switches, Data/SQL tab switches, New
+  table/New schema, and the back button behind a "Discard pending changes?"
+  dialog (`ConfirmDialog`). Cancel keeps the edits; Discard drops them.
+- **Profile deletion asks first.** The ✕ in the connection list opens the same
+  dialog with a danger action; nothing is deleted until confirmed.
+- **Connection status can't go stale.** Editing any form field (or switching
+  Fields/URL) resets an ok/error status back to "Not connected"; a busy test is
+  left alone.
+- **Lost sessions say so.** When a call fails with the backend's "not connected"
+  error (e.g. the dev backend restarted under an open window), the workspace
+  shows a banner with "Back to connections" instead of repeated errors. Detection
+  lives in `errors.js`; `DataGrid`, `SqlEditor`, and the initial tree load report it.
+
+Verified live: staged edit → table switch prompts; tab switch prompts; Cancel
+keeps the edits and Discard switches cleanly; delete dialog cancels without
+removing the profile; error status resets on typing; `Disconnect()` from the
+console raises the banner and its button returns to the connection screen.
+
+---
+
 ## Safety and correctness rules (from Stage 4 onward)
 
 1. **Identifiers** (schema, table, column) are never interpolated raw — always
@@ -473,8 +500,7 @@ Implementation notes:
 ## Out of scope (for now)
 
 Multiple simultaneous connections, SSH tunnels, CSV import/export, EXPLAIN
-visualization, schema diff/migrations, password vault, multi-statement SQL
-scripts, composite-PK editing.
+visualization, schema diff/migrations, password vault, composite-PK editing.
 
 ## Checkpoint protocol
 

@@ -2,6 +2,7 @@ import {createContext, useContext, useEffect, useMemo, useRef, useState} from 'r
 import {flexRender, useTable} from '@tanstack/react-table'
 import {coreFeatures} from '@tanstack/table-core'
 import {CommitEdits, PreviewUpdates, QueryRows} from '../wailsjs/go/main/App'
+import {isSessionLost} from './errors'
 import {useToast} from './Toast'
 
 const PAGE_SIZE = 8
@@ -65,7 +66,7 @@ function DataCell({cell}) {
     return <span className="cell" title={String(value)}>{String(value)}</span>
 }
 
-export default function DataGrid({schema, table}) {
+export default function DataGrid({schema, table, onPendingChange, onSessionLost}) {
     const notify = useToast()
     const filterRef = useRef(null)
     const [result, setResult] = useState(null)
@@ -78,12 +79,17 @@ export default function DataGrid({schema, table}) {
     const [reload, setReload] = useState(0)
 
     const [pending, setPending] = useState({})
+    const changeCount = Object.keys(pending).length
     const [editing, setEditing] = useState(null)
     const [draft, setDraft] = useState('')
     const [saving, setSaving] = useState(false)
     const [saveError, setSaveError] = useState('')
     const [preview, setPreview] = useState('')
     const [showPreview, setShowPreview] = useState(false)
+
+    useEffect(() => {
+        onPendingChange?.(changeCount)
+    }, [changeCount, onPendingChange])
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -118,7 +124,9 @@ export default function DataGrid({schema, table}) {
                 }
             })
             .catch((err) => {
-                if (!stale) setError(String(err))
+                if (stale) return
+                setError(String(err))
+                if (isSessionLost(err)) onSessionLost?.()
             })
             .finally(() => {
                 if (!stale) setLoading(false)
@@ -251,6 +259,7 @@ export default function DataGrid({schema, table}) {
             filterRef.current?.focus()
         } catch (err) {
             setSaveError(String(err))
+            if (isSessionLost(err)) onSessionLost?.()
         } finally {
             setSaving(false)
         }
@@ -266,7 +275,6 @@ export default function DataGrid({schema, table}) {
 
     const total = result?.total ?? 0
     const pageCount = result?.pageCount ?? 0
-    const changeCount = Object.keys(pending).length
     const hasChanges = changeCount > 0
     const gridValue = {pending, editing, draft, pkIndex, setDraft, commitEdit, cancelEdit, applyNull}
 

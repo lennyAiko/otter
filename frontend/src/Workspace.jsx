@@ -1,8 +1,10 @@
 import {useEffect, useMemo, useState} from 'react'
 import {ListSchemaTree} from '../wailsjs/go/main/App'
+import ConfirmDialog from './ConfirmDialog'
 import DataGrid from './DataGrid'
 import SqlEditor from './SqlEditor'
 import {SchemaForm, TableForm} from './DdlForms'
+import {isSessionLost} from './errors'
 import {useToast} from './Toast'
 
 export default function Workspace({info, onBack}) {
@@ -16,6 +18,9 @@ export default function Workspace({info, onBack}) {
     const [sqlHistory, setSqlHistory] = useState([])
     const [restoreSeq, setRestoreSeq] = useState(0)
     const [ddlSchema, setDdlSchema] = useState('public')
+    const [pendingCount, setPendingCount] = useState(0)
+    const [pendingNav, setPendingNav] = useState(null)
+    const [sessionLost, setSessionLost] = useState(false)
 
     useEffect(() => {
         load()
@@ -28,6 +33,7 @@ export default function Workspace({info, onBack}) {
         } catch (err) {
             setError(String(err))
             setTree([])
+            if (isSessionLost(err)) setSessionLost(true)
         }
     }
 
@@ -76,6 +82,21 @@ export default function Workspace({info, onBack}) {
         setRestoreSeq((current) => current + 1)
     }
 
+    function guarded(action) {
+        if (pendingCount > 0) {
+            setPendingNav({run: action})
+            return
+        }
+        action()
+    }
+
+    function confirmDiscard() {
+        const action = pendingNav?.run
+        setPendingNav(null)
+        setPendingCount(0)
+        action?.()
+    }
+
     async function handleSchemaCreated(name) {
         setDdlSchema(name)
         await load()
@@ -107,7 +128,7 @@ export default function Workspace({info, onBack}) {
                 <button
                     aria-label="Back to connections"
                     className="back"
-                    onClick={onBack}
+                    onClick={() => guarded(onBack)}
                     title="Back to connections"
                     type="button"
                 >
@@ -136,15 +157,15 @@ export default function Workspace({info, onBack}) {
                     />
                     <div className="sidebar-actions">
                         <button
-                            onClick={() => {
+                            onClick={() => guarded(() => {
                                 setDdlSchema(selected?.schema ?? 'public')
                                 setView('create-table')
-                            }}
+                            })}
                             type="button"
                         >
                             New table
                         </button>
-                        <button onClick={() => setView('create-schema')} type="button">
+                        <button onClick={() => guarded(() => setView('create-schema'))} type="button">
                             New schema
                         </button>
                     </div>
@@ -172,8 +193,11 @@ export default function Workspace({info, onBack}) {
                                         className={`table-row ${active ? 'on' : ''}`}
                                         key={table.name}
                                         onClick={() => {
-                                            setSelected({schema: schema.name, name: table.name})
-                                            setView('data')
+                                            if (active) return
+                                            guarded(() => {
+                                                setSelected({schema: schema.name, name: table.name})
+                                                setView('data')
+                                            })
                                         }}
                                         type="button"
                                     >
@@ -187,6 +211,12 @@ export default function Workspace({info, onBack}) {
                 </aside>
 
                 <main className="content">
+                    {sessionLost && (
+                        <div className="session-banner" role="alert">
+                            <span>Connection lost — the app is no longer connected to PostgreSQL.</span>
+                            <button onClick={onBack} type="button">Back to connections</button>
+                        </div>
+                    )}
                     <div className="content-head">
                         <div className="head-row">
                             <h2>{heading}</h2>
@@ -194,7 +224,9 @@ export default function Workspace({info, onBack}) {
                                 <button
                                     aria-pressed={view === 'data'}
                                     className={view === 'data' ? 'on' : ''}
-                                    onClick={() => setView('data')}
+                                    onClick={() => {
+                                        if (view !== 'data') guarded(() => setView('data'))
+                                    }}
                                     type="button"
                                 >
                                     Data
@@ -202,7 +234,9 @@ export default function Workspace({info, onBack}) {
                                 <button
                                     aria-pressed={view === 'sql'}
                                     className={view === 'sql' ? 'on' : ''}
-                                    onClick={() => setView('sql')}
+                                    onClick={() => {
+                                        if (view !== 'sql') guarded(() => setView('sql'))
+                                    }}
                                     type="button"
                                 >
                                     SQL
@@ -232,6 +266,7 @@ export default function Workspace({info, onBack}) {
                             initialText={sqlText}
                             onRan={recordRun}
                             onRestore={restoreSql}
+                            onSessionLost={() => setSessionLost(true)}
                             onTextChange={setSqlText}
                             restoreSeq={restoreSeq}
                         />
@@ -247,6 +282,8 @@ export default function Workspace({info, onBack}) {
                     ) : selectedTable ? (
                         <DataGrid
                             key={`${selected.schema}.${selectedTable.name}`}
+                            onPendingChange={setPendingCount}
+                            onSessionLost={() => setSessionLost(true)}
                             schema={selected.schema}
                             table={selectedTable}
                         />
@@ -255,6 +292,16 @@ export default function Workspace({info, onBack}) {
                     )}
                 </main>
             </div>
+
+            <ConfirmDialog
+                confirmLabel="Discard"
+                danger
+                message={`${pendingCount} unsaved ${pendingCount === 1 ? 'change' : 'changes'} will be lost.`}
+                onCancel={() => setPendingNav(null)}
+                onConfirm={confirmDiscard}
+                open={pendingNav !== null}
+                title="Discard pending changes?"
+            />
         </div>
     )
 }
