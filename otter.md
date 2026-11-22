@@ -84,6 +84,8 @@ otter/
 ├── connections.go              saved profiles in the user config dir (no passwords)
 ├── docker-compose.yml          Postgres 17 dev service
 ├── dev/seed.sql                schema + data, runs on first container start
+├── LICENSE                     MIT
+├── CONTRIBUTING.md             setup, conventions, checks, pull request rules
 ├── frontend/
 │   ├── index.html
 │   ├── src/main.jsx            React entry

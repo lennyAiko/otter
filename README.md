@@ -81,7 +81,7 @@ db.go                pool lifecycle and DSN building
 schema.go            catalog query for the sidebar tree
 rows.go              paged row reads (filter, sort, PK tie-breaker)
 edits.go             edit validation, SQL preview, transactional commit
-sqlrunner.go         one-statement runner with text-format results
+sqlrunner.go         script splitter and per-statement runner (text-format results)
 ddl.go               schema/table DDL validation and execution
 connections.go       saved profiles (no passwords)
 frontend/src         React UI; TanStack Form/Table and CodeMirror 6
@@ -91,6 +91,16 @@ otter.md             build plan and stage notes
 Compile checks:
 
 ```sh
+go test ./...
 go build ./...
 cd frontend && npm run build
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code conventions, and the
+checks to run before a pull request.
+
+## License
+
+[MIT](LICENSE) © 2026 Lennox Charles.
