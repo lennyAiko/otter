@@ -48,6 +48,10 @@ The result is `build/bin/otter.exe` on Windows. The frontend is compiled into th
 binary, so no Node.js is needed at runtime. Window title, version, company, and
 the application icon come from `wails.json` and `build/`.
 
+CI can build any target: run the **Build** workflow from the Actions tab, pick
+`all`, `windows`, `macos`, or `ubuntu`, and download the `otter-*` artifact when
+it finishes.
+
 ## Database
 
 The seed in `dev/seed.sql` runs only when the Docker volume is created:

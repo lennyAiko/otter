@@ -1,0 +1,95 @@
+name: Build
+
+run-name: Build (${{ inputs.platform }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Target platform
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - macos
+          - ubuntu
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - name: Choose targets
+        id: pick
+        run: |
+          case "${{ inputs.platform }}" in
+            windows) targets='{"include":[{"os":"windows-latest","name":"windows"}]}' ;;
+            macos)   targets='{"include":[{"os":"macos-latest","name":"macos"}]}' ;;
+            ubuntu)  targets='{"include":[{"os":"ubuntu-22.04","name":"ubuntu"}]}' ;;
+            *)       targets='{"include":[{"os":"windows-latest","name":"windows"},{"os":"macos-latest","name":"macos"},{"os":"ubuntu-22.04","name":"ubuntu"}]}' ;;
+          esac
+          echo "matrix=$targets" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: select
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Install Wails
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: wails build
+
+      - name: Package macOS bundle
+        if: runner.os == 'macOS'
+        run: |
+          app=$(ls -d build/bin/*.app)
+          ditto -c -k --keepParent "$app" otter-macos.zip
+
+      - name: Package Linux binary
+        if: runner.os == 'Linux'
+        run: tar -czf otter-linux-amd64.tar.gz -C build/bin otter
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otter-${{ matrix.name }}
+          path: |
+            build/bin/*.exe
+            otter-macos.zip
+            otter-linux-amd64.tar.gz
+          if-no-files-found: error
