@@ -9,5 +9,12 @@
   "author": {
     "name": "Lennox Charles",
     "email": "lennox.charles@tolaram.com"
+  },
+  "info": {
+    "companyName": "Lennyaiko",
+    "productName": "Otter",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 Lennox Charles",
+    "comments": "A small Postgres viewer, built one stage at a time."
   }
 }

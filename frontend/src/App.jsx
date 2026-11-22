@@ -2,6 +2,7 @@ import {useState} from 'react'
 import './App.css'
 import ConnectionScreen from './ConnectionScreen'
 import Workspace from './Workspace'
+import {ToastProvider} from './Toast'
 import {Disconnect} from '../wailsjs/go/main/App'
 
 export default function App() {
@@ -15,7 +16,11 @@ export default function App() {
         }
     }
 
-    return session
-        ? <Workspace info={session} onBack={back}/>
-        : <ConnectionScreen onConnected={setSession}/>
+    return (
+        <ToastProvider>
+            {session
+                ? <Workspace info={session} onBack={back}/>
+                : <ConnectionScreen onConnected={setSession}/>}
+        </ToastProvider>
+    )
 }

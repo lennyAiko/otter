@@ -187,10 +187,20 @@ export default function ConnectionScreen({onConnected}) {
                     <div className="card-head">
                         <h2>Connection</h2>
                         <div className="tabs">
-                            <button className={mode === 'fields' ? 'on' : ''} onClick={() => setMode('fields')} type="button">
+                            <button
+                                aria-pressed={mode === 'fields'}
+                                className={mode === 'fields' ? 'on' : ''}
+                                onClick={() => setMode('fields')}
+                                type="button"
+                            >
                                 Fields
                             </button>
-                            <button className={mode === 'url' ? 'on' : ''} onClick={() => setMode('url')} type="button">
+                            <button
+                                aria-pressed={mode === 'url'}
+                                className={mode === 'url' ? 'on' : ''}
+                                onClick={() => setMode('url')}
+                                type="button"
+                            >
                                 URL
                             </button>
                         </div>
@@ -331,7 +341,10 @@ export default function ConnectionScreen({onConnected}) {
                             >
                                 Test connection
                             </button>
-                            <span className={`status ${status.kind}`}>{status.text}</span>
+                            <span className={`status ${status.kind}`} role="status">
+                                {status.kind === 'busy' && <span className="spinner" aria-hidden="true"/>}
+                                {status.text}
+                            </span>
                         </div>
                     </form>
                 </section>

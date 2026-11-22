@@ -47,13 +47,15 @@ func (d *database) schemaTree(ctx context.Context) ([]SchemaNode, error) {
 				  and i.indisprimary
 				  and a.attnum = any (i.indkey)
 			)
-		from pg_class c
-		join pg_namespace n on n.oid = c.relnamespace
-		join pg_attribute a on a.attrelid = c.oid
-		where c.relkind in ('r', 'p')
-		  and a.attnum > 0
-		  and not a.attisdropped
-		  and n.nspname not in ('pg_catalog', 'information_schema')
+		from pg_namespace n
+		left join pg_class c
+			on c.relnamespace = n.oid
+			and c.relkind in ('r', 'p')
+		left join pg_attribute a
+			on a.attrelid = c.oid
+			and a.attnum > 0
+			and not a.attisdropped
+		where n.nspname not in ('pg_catalog', 'information_schema')
 		  and n.nspname not like 'pg\_%'
 		order by n.nspname, c.relname, a.attnum`)
 	if err != nil {
@@ -64,26 +66,30 @@ func (d *database) schemaTree(ctx context.Context) ([]SchemaNode, error) {
 	tree := []SchemaNode{}
 	lastSchema, lastTable := "", ""
 	for rows.Next() {
-		var schema, table, column, typ string
-		var nullable, primaryKey bool
+		var schema string
+		var table, column, typ *string
+		var nullable, primaryKey *bool
 		if err := rows.Scan(&schema, &table, &column, &typ, &nullable, &primaryKey); err != nil {
 			return nil, err
 		}
 		if schema != lastSchema {
-			tree = append(tree, SchemaNode{Name: schema})
+			tree = append(tree, SchemaNode{Name: schema, Tables: []TableNode{}})
 			lastSchema, lastTable = schema, ""
 		}
 		s := &tree[len(tree)-1]
-		if table != lastTable {
-			s.Tables = append(s.Tables, TableNode{Name: table})
-			lastTable = table
+		if table != nil && *table != lastTable {
+			s.Tables = append(s.Tables, TableNode{Name: *table, Columns: []ColumnNode{}})
+			lastTable = *table
+		}
+		if column == nil {
+			continue
 		}
 		t := &s.Tables[len(s.Tables)-1]
 		t.Columns = append(t.Columns, ColumnNode{
-			Name:       column,
-			Type:       typ,
-			Nullable:   nullable,
-			PrimaryKey: primaryKey,
+			Name:       *column,
+			Type:       *typ,
+			Nullable:   *nullable,
+			PrimaryKey: *primaryKey,
 		})
 	}
 	if err := rows.Err(); err != nil {

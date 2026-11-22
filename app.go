@@ -78,3 +78,18 @@ func (a *App) PreviewUpdates(edits []Edit) (string, error) {
 func (a *App) CommitEdits(edits []Edit) (CommitResult, error) {
 	return a.db.commitEdits(a.ctx, edits)
 }
+
+// RunQuery executes one SQL statement and returns its rows or command tag.
+func (a *App) RunQuery(sql string) (SQLResult, error) {
+	return a.db.runQuery(a.ctx, sql)
+}
+
+// CreateSchema creates a schema with a quoted identifier.
+func (a *App) CreateSchema(name string) error {
+	return a.db.createSchema(a.ctx, name)
+}
+
+// CreateTable validates a table definition and runs the generated DDL.
+func (a *App) CreateTable(def TableDef) error {
+	return a.db.createTable(a.ctx, def)
+}

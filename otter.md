@@ -46,8 +46,8 @@ Rules:
   (`features: {...coreFeatures, rowSortingFeature}`); v8 snippets
   (`useReactTable`, `getCoreRowModel`) do not apply. A
   `@tanstack/react-table/legacy` shim exists; we use the current API.
-- CodeMirror is only imported by the Stage 6 editor component, keeping it out of
-  the initial bundle until then.
+- CodeMirror is imported only by `SqlEditor.jsx`; from Stage 6 it is part of the
+  bundle (which roughly doubles), and that is expected.
 
 ## How the layers talk
 
@@ -77,6 +77,9 @@ otter/
 ├── db.go                       pool lifecycle, DSN, connection info
 ├── schema.go                   catalog queries (schema tree + column metadata)
 ├── rows.go                     paged row reads (filter, sort, PK tie-breaker)
+├── edits.go                    edit validation, SQL preview, transactional commit
+├── sqlrunner.go                one-statement runner with text-format results
+├── ddl.go                      schema/table DDL validation, quoting, execution
 ├── connections.go              saved profiles in the user config dir (no passwords)
 ├── docker-compose.yml          Postgres 17 dev service
 ├── dev/seed.sql                schema + data, runs on first container start
@@ -86,9 +89,13 @@ otter/
 │   ├── src/App.jsx             session switch: connection screen ↔ workspace
 │   ├── src/ConnectionScreen.jsx  profiles + connection form (TanStack Form)
 │   ├── src/Workspace.jsx       schema sidebar + grid host
-│   ├── src/DataGrid.jsx        TanStack Table v9 grid (server-side filter/sort/page)
+│   ├── src/DataGrid.jsx        TanStack Table v9 grid (server-side filter/sort/page, inline edits)
+│   ├── src/SqlEditor.jsx       CodeMirror 6 SQL runner (Run, Ctrl+Enter, history)
+│   ├── src/ResultGrid.jsx      read-only TanStack Table grid for SQL results
+│   ├── src/DdlForms.jsx        TanStack Form schema + table builders with DDL preview
+│   ├── src/Toast.jsx           toast provider and useToast hook
 │   ├── src/App.css
-│   ├── src/style.css           tokens/theme for now; prototype tokens in Stage 8
+│   ├── src/style.css           design tokens (light/dark), base type and focus
 │   └── wailsjs/                generated bindings (regenerate, don't edit)
 ├── postgres_viewer_prototype.html   reference spec
 └── otter.md                    this file
@@ -129,8 +136,12 @@ requires `docker compose down -v` first.
 | 1. Vertical slice | **Done** — Connect verified |
 | 2. Saved connections | **Done** — profiles persist; form rebuilt on TanStack Form |
 | 3. Schema tree | **Done** — verified against the seeded DB |
-| 4. Data grid | **Code complete** — checkpoint pending |
-| 5–9 | Not started |
+| 4. Data grid | **Done** — filter/sort/paging verified |
+| 5. Edit and commit | **Done** — commit, rollback, NULL and read-only paths verified |
+| 6. SQL runner | **Done** — SELECT, RETURNING, errors, cap, history verified |
+| 7. Create schema and table | **Done** — verified through the forms and psql |
+| 8. Design pass | **Code complete** — checkpoint pending |
+| 9. Package | Not started |
 
 ---
 
@@ -189,6 +200,9 @@ Backend (`schema.go`):
   `primaryKey`) from one query over `pg_class`, `pg_namespace`, `pg_attribute`,
   plus a correlated `EXISTS` on `pg_index` for PK detection; system schemas and
   dropped columns excluded; relkind `r`/`p` only (views later)
+- `pg_namespace` drives the query with `LEFT JOIN`, so schemas without tables
+  still appear (with an empty `tables` slice — Stage 7 needs them); nil slices
+  marshal as `null`, so they are initialized with `[]T{}`
 - Table metadata travels inside the tree payload (no separate `TableInfo` call
   until a screen needs one)
 
@@ -228,8 +242,10 @@ Backend (`rows.go`):
 Frontend (`DataGrid.jsx`, TanStack Table v9):
 - `useTable({features, data, columns, state: {sorting}, manualSorting: true})`;
   one column def per response column (`accessorFn` by index)
-- Header buttons call `getToggleSortingHandler()`; ▲/▼ markers read
-  `getIsSorted()`; sorting state maps to `sortColumn`/`sortDesc`
+- Header buttons call a local `toggleSort(id)`: asc → desc → clear, computed from
+  React state with a functional update (v9's `getToggleSortingHandler()` reads a
+  stale atom, so two rapid clicks only advanced one step); ▲/▼ markers read the
+  same state; sorting state maps to `sortColumn`/`sortDesc`
 - 250ms debounced filter box, row count, Prev/Next pager, sticky header
 - NULL cells render as an italic `NULL`; cells truncate with a `title` tooltip
 - Grid is keyed by `schema.table`, so switching tables resets filter/sort/page
@@ -240,29 +256,45 @@ pagination costs, mapping text casts back to display, controlled table state.
 **Done when:** filter/sort/paging all reflect the database (verify by changing a
 row in `psql` and refreshing).
 
-Stage 5 note: rows cross the bridge as text (`nil` for NULL). Edits will coerce
-using the catalog type already carried by the schema tree and send typed
-parameters with explicit casts.
+Stage 5 note: rows cross the bridge as text (`nil` for NULL). Edits are validated
+against the catalog type in the grid and sent as typed parameters with explicit
+casts; the server casts the text again (`$1::text::<type>`), so the grid never
+needs to serialize numbers/booleans itself.
 
 ## Stage 5 — Edit and commit
 
 Goal: the staged-edit flow from the prototype, but real and transactional.
 
-Backend:
-- `PreviewUpdates(edits []Edit)` → SQL text for review (server-generated so it
-  matches what will run)
-- `CommitEdits(edits []Edit)` → single transaction, parameterized `UPDATE`s keyed
-  by the table's PK; any failure rolls back everything and reports which edit
-  failed; returns row counts
-- Reject edits without a PK or targeting PK columns
+Backend (`edits.go`):
+- `Edit{Schema, Table, Column, Keys []KeyValue, Value *string}` — one cell; the
+  PK value travels in `Keys`
+- `loadTableMeta` re-reads column types and PK columns from the catalog;
+  `prepareEdits` validates every edit (known column, not a PK column, single
+  PK, ≤500 edits) and builds both the parameterized statement and its display
+  form, so preview and execution cannot drift
+- SQL shape: `update <qualified> set <col> = $1::text::<type> where <pk> =
+  $2::text::<pkType>`; identifiers via `pgx.Identifier`, values always parameters
+- `PreviewUpdates(edits)` → display SQL joined by blank lines
+- `CommitEdits(edits)` → one transaction; each `UPDATE` must affect exactly one
+  row or the batch rolls back; the error names the failing edit and carries the
+  Postgres message/SQLSTATE
+- No PK → "has no primary key, so rows cannot be updated safely"; composite PK
+  stays read-only for now
 
-Frontend:
-- Double-click editing with numeric/boolean coercion, NULL toggle, Enter/Escape
-- Pending edits highlighted, Save/Discard, review panel showing generated SQL
-- Tables with no PK are read-only with an explanatory badge
+Frontend (`DataGrid.jsx`):
+- Double-click opens a text editor (Enter commits, Escape cancels, blur commits);
+  values are validated against the catalog type (`not a number`, `use true or
+  false`) rather than silently coerced; a NULL button stages SQL NULL
+- Pending cells are highlighted; edit bar shows the count with Review SQL,
+  Save changes, Discard; re-editing a pending cell starts from the staged value
+- Cell content is a stable `DataCell` component reading grid state from context:
+  v9's `flexRender` treats an inline renderer as a new component type, which
+  remounted the input on every keystroke and broke focus/Enter
+- Tables with no PK or a composite PK are read-only, with the reason in the
+  content header
 
 Concepts: transactions, optimistic UI, parameters vs literals, why a PK is
-required for safe updates.
+required for safe updates, component identity and remounting.
 
 **Done when:** edit several cells across rows, review SQL, save, confirm in
 `psql`; introduce a constraint violation and see the whole batch roll back.
@@ -271,23 +303,34 @@ required for safe updates.
 
 Goal: real query execution with results and history.
 
-Backend:
-- `RunQuery(sql)` → `{Columns, Rows, RowCount, DurationMs, Affected, Notice}`
-- Detect result sets vs commands (`rows.FieldDescriptions()`); cap returned rows
-  (e.g. 1000) and report truncation
-- Errors returned with Postgres message and SQLSTATE
-- Run against the active pooled connection
+Backend (`sqlrunner.go`):
+- `RunQuery(sql)` → `{Columns, Rows, RowCount, Affected, DurationMs, Truncated,
+  Notice}`; blank input rejected, 30s timeout, empty SQL rejected
+- One statement per run: the extended protocol refuses multiple commands, which
+  is the documented limitation for now
+- Results are fetched with `pgx.QueryResultFormats{pgx.TextFormatCode}` and read
+  via `RawValues()`, so every type arrives as Postgres' own text (numeric,
+  timestamptz, arrays) and NULL stays nil
+- `FieldDescriptions()` distinguishes result sets from commands; both paths read
+  `CommandTag()` for the affected count
+- Rows capped at 1,000 with a `Truncated` flag and notice
+- Errors come back verbatim from pgx (`ERROR: … (SQLSTATE …)`)
 
-Frontend:
-- `SqlEditor.jsx` on CodeMirror 6: extensions from `@codemirror/view`/`state`/
-  `commands` (`lineNumbers`, `history`, `keymap`, highlighting), `sql()` language,
-  a small theme mapped to our CSS tokens, Ctrl+Enter bound to Run
-- Result grid reuses the Stage 4 TanStack Table component (pagination off — the
-  server already capped rows); error panel
-- History list (session memory, per connection), click to restore the editor text
+Frontend (`SqlEditor.jsx`, `ResultGrid.jsx`):
+- CodeMirror 6 with `basicSetup` (line numbers, history, syntax highlighting),
+  `sql()` language, a theme mapped to the CSS tokens, `EditorView.lineWrapping`,
+  and a `Mod-Enter` keymap above the defaults bound to Run
+- Editor text and history live in `Workspace`, so they survive tab switches and
+  stay per connection; clicking a history entry refills the editor and focuses it
+- SQL results render in `ResultGrid`, a read-only TanStack Table v9 grid (no
+  sorting or paging; the server already capped the rows); NULL uses the same
+  italic style as the data grid
+- Run bar shows `N rows · X ms` or `N rows affected · X ms`, truncation notice,
+  and an error panel for failures; failed entries are marked in history
+- Content pane gains Data / SQL tabs; picking a table switches back to Data
 
-Concepts: `pgx` query vs exec, result-set termination, latency measurement,
-multi-statement handling (documented limitation: one statement per run initially).
+Concepts: `pgx` query vs exec, text vs binary result formats, result-set
+termination, latency measurement, controlled imperative editors in React.
 
 **Done when:** `SELECT` returns rows; `UPDATE ... RETURNING` works; a syntax
 error shows Postgres' message; history restores a query.
@@ -296,20 +339,36 @@ error shows Postgres' message; history restores a query.
 
 Goal: the DDL builders from the prototype.
 
-Backend:
-- `CreateSchema(name)`, `CreateTable(def)` using quoted identifiers, server-side
-  parameter validation where parameters exist (none in DDL — identifiers are
-  quoted, which is the protection)
-- Return Postgres errors verbatim; refresh tree on success
+Backend (`ddl.go`):
+- `CreateSchema(name)` and `CreateTable(def)`; `quoteIdent` is the only
+  protection DDL gets (no parameters), so every identifier goes through it
+- `renderCreateTable` is the single source for the statement: name/column
+  validation (required, ≤63 chars, no NUL), unique column names, ≤100 columns,
+  one PK clause quoted from the checked columns
+- Column types are whitelisted by pattern (`text`, `numeric(10,2)`,
+  `character varying(50)`, `text[]`); defaults are single expressions (≤200
+  chars, no `;`)
+- Postgres errors are returned verbatim (e.g. `relation "x" already exists
+  (SQLSTATE 42P07)`)
 
-Frontend (TanStack Form):
-- Schema form with SQL preview (name field with validator + submit-time check)
-- Table builder on TanStack Form with an array field for column rows (name, type,
-  default, nullable, PK), add/remove column, live preview, single vs composite PK
-  rendering
-- Duplicate/invalid-name checks (client-side hints + server truth)
+Frontend (`DdlForms.jsx`, TanStack Form):
+- Sidebar gains "New table" / "New schema"; schemas with no tables are listed
+  ("No tables yet.")
+- Schema form: name field with `onChange`/`onSubmit` validators and a quoted
+  `create schema …;` preview; success refreshes the tree and jumps to the table
+  builder with that schema preselected
+- Table builder: schema select, table name, and a `columns` array field with
+  `pushValue`/`removeValue`; each row has name, type (datalist), default,
+  nullable and PK checkboxes
+- Validators mirror the server (required names, type pattern, default
+  expression, unique column names); the form-level error clears on the next
+  change so stale server errors don't linger
+- Preview re-renders from `form.Subscribe` state; on success the tree refreshes,
+  the new table is selected, and its (empty) grid opens
+- Content head gains DDL views alongside Data / SQL
 
-Concepts: DDL vs DML, identifier quoting, defaults as expressions vs literals.
+Concepts: DDL vs DML, identifier quoting vs parameter binding, defaults as
+expressions vs literals, array fields in TanStack Form, nil slices and JSON.
 
 **Done when:** create a schema and a table, both appear in the sidebar and accept
 rows through the grid.
@@ -318,15 +377,31 @@ rows through the grid.
 
 Goal: visual parity with the prototype on the core screens.
 
-- Port the prototype's design tokens (palette, spacing, radii, type scale) into
-  `style.css`; light and dark themes via `color-scheme`
-- App shell: header bar, sidebar, tabs, toolbar, pending-changes bar, toasts
-- Empty states, error states, loading states
-- Keyboard: Enter/Escape while editing, Ctrl+Enter to run SQL, focus management
-- Accessibility: labels, focus rings, table semantics
+- `style.css` carries the prototype's token layer: `--surface-0/1/2`,
+  `--text-primary/secondary/muted`, `--border`/`--border-strong`,
+  `--fill-primary`/`--on-primary`, neutral fills, accent/warning/danger/success
+  pairs, radii, control height, shadows, and the sans/mono stacks. Light is the
+  base; a `prefers-color-scheme: dark` block overrides the 26 color tokens
+  (geometry and fonts are shared), and `color-scheme: light dark` lets native
+  controls follow
+- `App.css` was rebuilt on those tokens: 30px controls, underline tabs,
+  46px header with a connection status dot, 200px sidebar, 12px grid with a
+  hairline header rule, and the warning-tinted pending-changes bar
+- `Toast.jsx`: context plus `useToast`; bottom-right live region, auto-dismiss
+  after 3.5s, click to dismiss. Commit and DDL success announce there; after a
+  save focus returns to the filter box (the Save button disappears)
+- States: spinner for tree/grid/run/save busy work, `.empty-state` blocks for
+  empty and filtered tables plus empty SQL results, and a shared `.error-panel`
+  for SQL and save failures
+- Keyboard and a11y: Enter/Escape in cell editors, Ctrl+Enter to run, a global
+  `:focus-visible` ring, `aria-sort` on sorted headers, `scope="col"`, table
+  `aria-label`s, `aria-pressed` view toggles, `aria-current` on the selected
+  table, and live regions for toasts and status text
+- Primary buttons follow the prototype (neutral `fill-primary`, not blue);
+  blue is reserved for selection and focus. DDL forms gained Cancel
 
-**Done when:** side-by-side with `postgres_viewer_prototype.html`, the core flows
-look and behave the same.
+**Done when:** side-by-side with the prototype, the core flows look and behave
+the same in light and dark.
 
 ## Stage 9 — Package
 
